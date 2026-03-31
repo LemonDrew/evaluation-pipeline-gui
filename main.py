@@ -1,5 +1,6 @@
 import customtkinter
 from select_model_button import SelectModelButton
+from evaluation_page import EvaluationPage
 
 class App(customtkinter.CTk):
     def __init__(self):
@@ -42,7 +43,17 @@ class App(customtkinter.CTk):
         print("Selecting dataset")
 
     def start_evaluation(self):
-        print("Starting test")
+        model1 = self.first_model_button.get()
+        model2 = self.second_model_button.get()
+
+        if (not model1 or not model2) :
+            return 
+        
+        for widget in self.winfo_children():
+            widget.destroy()
+
+        self.eval_page = EvaluationPage(self)
+        self.eval_page.pack(fill="both", expand=True)
 
 app = App()
 app.mainloop()
