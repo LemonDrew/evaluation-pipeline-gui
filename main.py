@@ -55,5 +55,7 @@ class App(customtkinter.CTk):
         self.eval_page = EvaluationPage(self)
         self.eval_page.pack(fill="both", expand=True)
 
+        self.eval_page.run_evaluation(model1, model2)
+
 app = App()
 app.mainloop()
