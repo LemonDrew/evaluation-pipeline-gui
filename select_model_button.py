@@ -1,40 +1,80 @@
 import customtkinter
+import tkinter as tk
 from tkinter import filedialog
-import os
+from model_runner import ARCHITECTURES
+
 
 class SelectModelButton(customtkinter.CTkFrame):
+    """
+    A composite widget that lets the user pick a model file (.tflite or .pt).
+    When a .pt file is chosen, an architecture dropdown appears beneath the button.
+    """
 
-    def __init__(self, master):
-        super().__init__(master)
+    def __init__(self, master, **kwargs):
+        super().__init__(master, fg_color="transparent", **kwargs)
 
-        self.selected_file = None  # store path
+        self._path     = None
+        self._arch_var = tk.StringVar(value=list(ARCHITECTURES.keys())[0])
 
-        self.grid_columnconfigure(0, weight=1)
-
-        self.button = customtkinter.CTkButton(
+        # ── File picker button ────────────────────────────────────────────────
+        self._btn = customtkinter.CTkButton(
             self,
             text="Select Model",
-            command=self.select_model
+            width=180,
+            command=self._pick_file,
         )
-        self.button.grid(row=0, column=0, padx=10, pady=5)
+        self._btn.grid(row=0, column=0, padx=6, pady=6)
 
-        self.label = customtkinter.CTkLabel(self, text="No file selected")
-        self.label.grid(row=1, column=0, padx=10, pady=5)
+        # ── Architecture dropdown (hidden until a .pt is chosen) ──────────────
+        self._arch_label = customtkinter.CTkLabel(self, text="Architecture:")
+        self._arch_menu  = customtkinter.CTkOptionMenu(
+            self,
+            variable=self._arch_var,
+            values=list(ARCHITECTURES.keys()),
+            width=180,
+        )
+        # Not gridded yet — shown only for .pt files
 
-    def select_model(self):
-        file_path = filedialog.askopenfilename(
-            title="Select a model",
+    # ── Internal ──────────────────────────────────────────────────────────────
+
+    def _pick_file(self):
+        path = filedialog.askopenfilename(
+            title="Select model",
             filetypes=[
-                ("Model files", "*.pt *.onnx *.pth *.tflite"),
-                ("All files", "*.*")
-            ]
+                ("TFLite models", "*.tflite"),
+                ("PyTorch models", "*.pt"),
+                ("All files",      "*.*"),
+            ],
         )
+        if not path:
+            return
 
-        if file_path:
-            self.selected_file = file_path
-            filename = os.path.basename(file_path)
-            self.label.configure(text=filename)  # update UI
-            print("Selected:", file_path)
+        self._path = path
+        short = path.split("/")[-1]
+        if len(short) > 22:
+            short = short[:10] + "…" + short[-10:]
+        self._btn.configure(text=short)
 
-    def get(self):
-        return self.selected_file
+        if path.endswith(".pt"):
+            self._arch_label.grid(row=1, column=0, padx=6, pady=(0, 2))
+            self._arch_menu.grid( row=2, column=0, padx=6, pady=(0, 6))
+        else:
+            self._arch_label.grid_remove()
+            self._arch_menu.grid_remove()
+
+
+    def get(self) -> dict | None:
+        """
+        Returns {"path": str, "arch": str | None} or None if no file chosen.
+        arch is only set for .pt files.
+        """
+        if not self._path:
+            return None
+        arch = self._arch_var.get() if self._path.endswith(".pt") else None
+        return {"path": self._path, "arch": arch}
+
+    def reset(self):
+        self._path = None
+        self._btn.configure(text="Select Model")
+        self._arch_label.grid_remove()
+        self._arch_menu.grid_remove()
