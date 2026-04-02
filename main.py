@@ -56,11 +56,6 @@ def build_main_ui(root: customtkinter.CTk):
     error_lbl = customtkinter.CTkLabel(root, textvariable=error_var, text_color="red")
     error_lbl.grid(row=2, column=0)
 
-    start_btn = customtkinter.CTkButton(
-        root, text="Start Evaluation", command=start_evaluation
-    )
-    start_btn.grid(row=3, column=0, padx=10, pady=10, sticky="ew")
-
     def start_evaluation():
         model1  = first_model_button.get()
         model2  = second_model_button.get()
@@ -87,6 +82,13 @@ def build_main_ui(root: customtkinter.CTk):
         eval_page = EvaluationPage(root)
         eval_page.pack(fill="both", expand=True)
         eval_page.run_evaluation(model1, model2, dataset)
+
+    start_btn = customtkinter.CTkButton(
+        root, text="Start Evaluation", command=start_evaluation
+    )
+    start_btn.grid(row=3, column=0, padx=10, pady=10, sticky="ew")
+
+    
 
 class App(customtkinter.CTk):
     def __init__(self):

@@ -31,10 +31,7 @@ class ReportPage(customtkinter.CTkFrame):
         self.grid_columnconfigure(0, weight=1)
         self._build()
  
-    # ── UI ────────────────────────────────────────────────────────────────────
- 
     def _build(self):
-        # Title
         title = customtkinter.CTkLabel(
             self, text="Evaluation Report", font=("", 20, "bold")
         )
@@ -52,7 +49,8 @@ class ReportPage(customtkinter.CTkFrame):
         table_frame = customtkinter.CTkFrame(self)
         table_frame.grid(row=2, column=0, padx=30, pady=10, sticky="ew")
         self.grid_columnconfigure(0, weight=1)
- 
+
+        # Headers for table
         headers = ["Metric", self._model1_name, self._model2_name, "Winner"]
         col_widths = [220, 160, 160, 120]
  
