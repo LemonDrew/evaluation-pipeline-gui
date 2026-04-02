@@ -11,7 +11,8 @@ def build_main_ui(root: customtkinter.CTk):
     root.grid_rowconfigure(1, weight=1)
 
     # Variable to store the dataset
-    dataset_var = tk.StringVar(value="")    
+    dataset_var = tk.StringVar(value="") 
+    is_live_camera = tk.BooleanVar(value=False)
 
     # Frame to contain the dataset button
     top_frame = customtkinter.CTkFrame(root, fg_color="transparent")
@@ -83,10 +84,21 @@ def build_main_ui(root: customtkinter.CTk):
         eval_page.pack(fill="both", expand=True)
         eval_page.run_evaluation(model1, model2, dataset)
 
+    def set_camera_preview():
+        status = not is_live_camera.get()
+        is_live_camera.set(status)
+        print("Status", status)
+
+    # Checkbox for enabling/disabling live camera
+    live_camera_btn = customtkinter.CTkCheckBox(
+        root, text="Enable Live Camera Preview", command=set_camera_preview
+    )
+    live_camera_btn.grid(row=3, column=0, pady=(5, 5))
+
     start_btn = customtkinter.CTkButton(
         root, text="Start Evaluation", command=start_evaluation
     )
-    start_btn.grid(row=3, column=0, padx=10, pady=10, sticky="ew")
+    start_btn.grid(row=4, column=0, padx=10, pady=10, sticky="ew")
 
     
 
