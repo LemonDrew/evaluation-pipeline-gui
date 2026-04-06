@@ -51,20 +51,29 @@ class EvaluationPage(customtkinter.CTkFrame):
         )
         self._sub_lbl.grid(row=2, column=0, padx=20, pady=(0, 20))
 
-    def run_evaluation(self, model1: dict, model2: dict, dataset_folder: str):
+    def run_evaluation(self, model1: dict, model2: dict, dataset_folder: str, is_live: bool):
         """
         Start the evaluation pipeline in a background thread.
 
         Args:
             model1 / model2:  dicts with keys "path" and "arch" (arch=None for tflite)
             dataset_folder:   root folder containing images + a labels file
+            is_live: boolean value indicating whether live camera is on
         """
         self._model1_info    = model1
         self._model2_info    = model2
         self._dataset_folder = dataset_folder
 
-        t = threading.Thread(target=self._pipeline, daemon=True)
-        t.start()
+        print(f"Model 1: {model1}")
+        print(f"Model 2: {model2}")
+        print(f"Dataset folder: {dataset_folder}")
+
+        # If no live camera preview, then we use a dataset
+        if (not is_live):   
+            t = threading.Thread(target=self._pipeline, daemon=True)
+            t.start()
+        else:
+            return
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -73,37 +82,24 @@ class EvaluationPage(customtkinter.CTkFrame):
         self.after(0, lambda: self._progress.set(progress))
         self.after(0, lambda: self._sub_var.set(sub))
 
-    def _find_labels_file(self) -> str | None:
-        for fname in os.listdir(self._dataset_folder):
-            if fname.endswith(".txt"):
-                return os.path.join(self._dataset_folder, fname)
-        return None
+    def _load_dataset(self) -> list[tuple[str, int]]:
 
-    def _load_dataset(self, labels_path: str) -> list[tuple[str, int]]:
-        """
-        Returns [(image_path, label_int), …] sorted by filename.
-        Labels file: one integer label per line, matched to sorted image filenames.
-        """
-        image_exts = {".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".webp"}
-        image_files = sorted(
-            f for f in os.listdir(self._dataset_folder)
-            if os.path.splitext(f)[1].lower() in image_exts
-        )
+        # Directory where images are stored
+        images_dir = os.path.join(self._dataset_folder, "images")
 
-        with open(labels_path, "r") as fh:
-            raw = [line.strip() for line in fh if line.strip()]
+        # Hardcoded the expected label for now
+        label = "no pill under tongue"
 
-        labels = [int(l) for l in raw]
+        # Retrieve the list of image files
+        image_files = os.listdir(images_dir)
 
-        if len(labels) != len(image_files):
-            raise ValueError(
-                f"Label count ({len(labels)}) != image count ({len(image_files)})"
-            )
+        dataset = []
 
-        return [
-            (os.path.join(self._dataset_folder, img), lbl)
-            for img, lbl in zip(image_files, labels)
-        ]
+        for img_file in image_files:
+            img_path = os.path.join(images_dir, img_file)
+            dataset.append((img_path, "pill"))
+
+        return dataset
 
     @staticmethod
     def retrieve_minimum_resolution(runner1: ModelRunner, runner2: ModelRunner) -> tuple[int, int]:
@@ -122,19 +118,25 @@ class EvaluationPage(customtkinter.CTkFrame):
             runner1.load()
             runner2.load()
 
+            print("------------ Step 1 complete ------------")
+            print("Models loaded successfully.")
+
             # Step 2 — minimum resolution
             self._set_status(self._STEPS[1], 0.15)
             h, w = self.retrieve_minimum_resolution(runner1, runner2)
 
-            # Step 3 — load dataset
+            print
+            print(f"Minimum shared resolution: {w}x{h}")
+
+            # # Step 3 — load dataset
             self._set_status(self._STEPS[2], 0.25)
-            labels_path = self._find_labels_file()
-            if labels_path is None:
-                raise FileNotFoundError("No .txt labels file found in dataset folder.")
-            dataset = self._load_dataset(labels_path)
+            dataset = self._load_dataset()
             n = len(dataset)
 
-            # Step 4 — run inference
+            print("------------ Step 3 complete ------------")
+            print(f"Loaded {n} images from dataset.")
+
+            # # Step 4 — run inference
             self._set_status(self._STEPS[3], 0.35)
 
             results1, results2 = [], []
@@ -164,6 +166,10 @@ class EvaluationPage(customtkinter.CTkFrame):
             runner1.close()
             runner2.close()
 
+            print("------------ Step 4 complete ------------")
+            print(f"Model 1: {correct1} / {n} correct")
+            print(f"Model 2: {correct2} / {n} correct")
+
             # Step 5 — compute metrics
             self._set_status(self._STEPS[4], 0.95)
 
@@ -181,11 +187,21 @@ class EvaluationPage(customtkinter.CTkFrame):
             metrics1 = summarise(results1, correct1)
             metrics2 = summarise(results2, correct2)
 
-            # Hand off to ReportPage on main thread
+            print("------------ Step 5 complete ------------")
+            print("Metrics for Model 1:")
+            for k, v in metrics1.items():
+                if k != "per_image":
+                    print(f"  {k}: {v}")
+            print("Metrics for Model 2:")
+            for k, v in metrics2.items():
+                if k != "per_image":
+                    print(f"  {k}: {v}")
+
+            # # Hand off to ReportPage on main thread
             self.after(0, lambda: self._show_report(metrics1, metrics2))
 
         except Exception as exc:
-            self.after(0, lambda: self._show_error(str(exc)))
+            self.after(0, lambda exc = exc: self._show_error(str(exc)))
 
     def _show_report(self, metrics1: dict, metrics2: dict):
         from report_page import ReportPage

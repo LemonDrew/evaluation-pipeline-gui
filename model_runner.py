@@ -2,6 +2,15 @@ import time
 import numpy as np
 from PIL import Image
  
+LABELS = [
+    "pill",
+    "pill on tongue",
+    "no pill on tongue",
+    "drink water",
+    "please use transparent cup",
+    "mouth covered",
+    "no pill under tongue",
+]
  
 # ── Supported torchvision architectures ──────────────────────────────────────
 ARCHITECTURES = {
@@ -110,44 +119,36 @@ class ModelRunner:
  
     def _predict_tflite(self, image: Image.Image) -> dict:
         import tensorflow as tf
- 
+
         dtype = self._input_details[0]["dtype"]
         arr   = np.array(image, dtype=np.float32)
- 
-        # Normalise: quantised models expect uint8 [0,255], float models [0,1]
+
         if dtype == np.uint8:
             arr = arr.astype(np.uint8)
         else:
             arr = arr / 255.0
- 
+
         arr = np.expand_dims(arr, axis=0).astype(dtype)
         self._model.set_tensor(self._input_details[0]["index"], arr)
- 
+
         t0 = time.perf_counter()
         self._model.invoke()
         t1 = time.perf_counter()
- 
+
         output = self._model.get_tensor(self._output_details[0]["index"])
-        label  = int(np.argmax(output[0]))
-        return {"label": label, "time_ms": (t1 - t0) * 1000}
- 
-    def _predict_pytorch(self, image: Image.Image) -> dict:
-        import torch
- 
-        arr    = np.array(image, dtype=np.float32) / 255.0          # [H,W,3]
-        mean   = np.array([0.485, 0.456, 0.406])
-        std    = np.array([0.229, 0.224, 0.225])
-        arr    = (arr - mean) / std
-        tensor = torch.from_numpy(arr).permute(2, 0, 1).unsqueeze(0).float()
- 
-        t0 = time.perf_counter()
-        with torch.no_grad():
-            output = self._model(tensor)
-        t1 = time.perf_counter()
- 
-        label = int(torch.argmax(output, dim=1).item())
-        return {"label": label, "time_ms": (t1 - t0) * 1000}
- 
+
+        out = output[0].T          # (2100, 11)
+        class_scores = out[:, 4:]  # (2100, 7)
+        confidences = np.max(class_scores, axis=1)
+        class_ids = np.argmax(class_scores, axis=1)
+
+        best_idx = np.argmax(confidences)
+        best_class = int(class_ids[best_idx])
+        best_conf = float(confidences[best_idx])
+        best_label = LABELS[best_class] if best_class < len(LABELS) else str(best_class)
+
+        return {"label": best_label, "confidence": best_conf, "time_ms": (t1 - t0) * 1000}
+    
     # ── Cleanup ───────────────────────────────────────────────────────────────
  
     def close(self):

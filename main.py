@@ -1,5 +1,6 @@
 import tkinter as tk
 from tkinter import filedialog
+import os
 import customtkinter
 from select_model_button import SelectModelButton
 from evaluation_page import EvaluationPage
@@ -24,10 +25,20 @@ def build_main_ui(root: customtkinter.CTk):
     # Helper function to select the dataset
     def select_dataset():
         folder = filedialog.askdirectory(title="Select dataset folder")
-        if folder:
-            dataset_var.set(folder)
-            short = folder.split("/")[-1] or folder
-            dataset_btn.configure(text=f"{short}")
+        
+        if not folder:
+            return
+        
+        images_path = os.path.join(folder, "images")
+        labels_path = os.path.join(folder, "labels")
+
+        if not os.path.isdir(images_path) or not os.path.isdir(labels_path):
+            error_var.set("Selected folder must contain 'images' and 'labels' subfolders.")
+            return
+        
+        dataset_var.set(folder)
+        error_var.set("")
+        dataset_btn.configure(text="Dataset Selected")
 
     # Button for Selecting Dataset
     dataset_btn = customtkinter.CTkButton(
@@ -36,7 +47,7 @@ def build_main_ui(root: customtkinter.CTk):
     dataset_btn.grid(row=0, column=1, pady=(10, 0))
     # Button's label
     dataset_lbl = customtkinter.CTkLabel(
-        top_frame, textvariable=dataset_var, text_color="gray", anchor="w"
+        top_frame, textvariable=dataset_var, text_color="gray"
     )
     dataset_lbl.grid(row=1, column=1, sticky="ew")
 
@@ -67,7 +78,7 @@ def build_main_ui(root: customtkinter.CTk):
             missing.append("Model 1")
         if not model2:
             missing.append("Model 2")
-        if not dataset:
+        if not dataset and not is_live_camera.get():
             missing.append("Dataset folder")
 
         if missing:
@@ -82,12 +93,11 @@ def build_main_ui(root: customtkinter.CTk):
 
         eval_page = EvaluationPage(root)
         eval_page.pack(fill="both", expand=True)
-        eval_page.run_evaluation(model1, model2, dataset)
+        eval_page.run_evaluation(model1, model2, dataset, is_live_camera.get())
 
     def set_camera_preview():
         status = not is_live_camera.get()
         is_live_camera.set(status)
-        print("Status", status)
 
     # Checkbox for enabling/disabling live camera
     live_camera_btn = customtkinter.CTkCheckBox(
