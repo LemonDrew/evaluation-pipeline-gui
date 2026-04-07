@@ -15,12 +15,11 @@ class EvaluationPage(customtkinter.CTkFrame):
 
     Pipeline:
         1. Load both models
-        2. Determine minimum shared input resolution
-        3. Load images + labels from dataset folder
-        4. Resize every image to the minimum resolution
-        5. Run inference on both models, recording time and predicted label
-        6. Compute Top-1 accuracy, mean inference time, throughput
-        7. Hand results to ReportPage
+        2. Load images + labels from dataset folder
+        3. Resize every image to the minimum resolution
+        4. Run inference on both models, recording time and predicted label
+        5. Compute Top-1 accuracy, mean inference time, throughput
+        6. Hand results to ReportPage
     """
 
     _STEPS = [
