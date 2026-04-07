@@ -166,8 +166,8 @@ class ReportPage(customtkinter.CTkFrame):
             writer.writerow(["Metric", self._model1_name, self._model2_name])
             writer.writerow([
                 "Top-1 Accuracy (%)",
-                f"{self._metrics1['accuracy'] * 100:.4f}",
-                f"{self._metrics2['accuracy'] * 100:.4f}",
+                f"{self._metrics1['recall'] * 100:.4f}",
+                f"{self._metrics2['recall'] * 100:.4f}",
             ])
             writer.writerow([
                 "Mean Inference Time (ms)",
