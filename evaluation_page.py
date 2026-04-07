@@ -2,6 +2,8 @@ import os
 import threading
 import customtkinter
 import tkinter as tk
+import torch
+from torchvision.ops import box_iou, box_convert
 from PIL import Image
 from model_runner import ModelRunner
 
@@ -93,20 +95,33 @@ class EvaluationPage(customtkinter.CTkFrame):
     # Helper Function to load images from folder
     def _loadImages(self):
         self._set_status(self._STEPS[1], 0.25)
-        # Directory where images are stored
-        images_dir = os.path.join(self._dataset_folder, "images")
 
-        # Retrieve the list of image files
-        image_files = os.listdir(images_dir)
+        images_dir = os.path.join(self._dataset_folder, "images")
+        labels_dir = os.path.join(self._dataset_folder, "labels")
+
+        image_files = sorted(os.listdir(images_dir))
 
         dataset = []
+        labels  = []
 
         for img_file in image_files:
+            # Skip non-image files
+            if not img_file.lower().endswith((".jpg", ".jpeg", ".png")):
+                continue
+
+            label_filename = os.path.splitext(img_file)[0] + ".txt"
+            label_path     = os.path.join(labels_dir, label_filename)
+
+            if not os.path.exists(label_path):
+                print(f"Warning: No label found for {img_file}, skipping.")
+                continue
+
             img_path = os.path.join(images_dir, img_file)
             dataset.append((img_path, self._expected_label))
+            labels.append(label_path)
 
-        return dataset
-    
+        return dataset, labels
+        
     def _runInference(self, runner1, runner2, dataset):
 
         self._set_status(self._STEPS[2], 0.35)
@@ -117,6 +132,7 @@ class EvaluationPage(customtkinter.CTkFrame):
 
         results1, results2 = [], []
         correct1 = correct2 = 0
+        n = len(dataset)
 
         for i, (img_path, true_label) in enumerate(dataset):
 
@@ -146,23 +162,51 @@ class EvaluationPage(customtkinter.CTkFrame):
 
         return results1, results2, correct1, correct2
     
-    def _processResults(self, results1, results2, correct1, correct2):
+    def _processResults(self, results1, results2, correct1, correct2, labels):
+
+        iou_scores1 = []
+        iou_scores2 = []
+        
+        # Calculates IoU
+        for i, lbl_path in enumerate(labels):
+            with open(lbl_path, "r") as f:
+                parts = f.readline().strip().split()
+                _, cx, cy, w, h = parts
+                gt_box = torch.tensor([[float(cx), float(cy), float(w), float(h)]])
+                gt_box_xyxy = box_convert(gt_box, in_fmt="cxcywh", out_fmt="xyxy")
+
+            # Model 1 IoU
+            pred_box1 = results1[i].get("box")
+            if pred_box1:
+                b1 = torch.tensor([[pred_box1["cx"], pred_box1["cy"], pred_box1["w"], pred_box1["h"]]])
+                b1_xyxy = box_convert(b1, in_fmt="cxcywh", out_fmt="xyxy")
+                iou1 = box_iou(gt_box_xyxy, b1_xyxy)[0][0].item()
+                iou_scores1.append(iou1)
+
+            # Model 2 IoU
+            pred_box2 = results2[i].get("box")
+            if pred_box2:
+                b2 = torch.tensor([[pred_box2["cx"], pred_box2["cy"], pred_box2["w"], pred_box2["h"]]])
+                b2_xyxy = box_convert(b2, in_fmt="cxcywh", out_fmt="xyxy")
+                iou2 = box_iou(gt_box_xyxy, b2_xyxy)[0][0].item()
+                iou_scores2.append(iou2)
 
         self._set_status(self._STEPS[3], 0.95)
-        
-        def summarise(results: list[dict], correct: int) -> dict:
+
+        def summarise(results, correct, iou_scores):
             times   = [r["time_ms"] for r in results]
             mean_ms = sum(times) / len(times)
             total_s = sum(times) / 1000
             return {
-                "accuracy":         correct / n,
+                "recall":           correct / len(results),
+                "mean_iou":         sum(iou_scores) / len(iou_scores) if iou_scores else 0.0,
                 "mean_time_ms":     mean_ms,
-                "throughput_img_s": n / total_s,
+                "throughput_img_s": len(results) / total_s,
                 "per_image":        results,
             }
-        
-        metrics1 = summarise(results1, correct1)
-        metrics2 = summarise(results2, correct2)
+
+        metrics1 = summarise(results1, correct1, iou_scores1)
+        metrics2 = summarise(results2, correct2, iou_scores2)
 
         print("Metrics for Model 1:")
         for k, v in metrics1.items():
@@ -183,13 +227,13 @@ class EvaluationPage(customtkinter.CTkFrame):
             runner1, runner2 = self._loadModels()
 
             # Load Images
-            dataset = self._loadImages()
+            dataset, labels = self._loadImages()
 
             # Run Inference
             results1, results2, correct1, correct2 = self._runInference(runner1, runner2, dataset)
 
             # Process Results
-            metrics1, metrics2 = self._processResults(results1, results2, correct1, correct2)
+            metrics1, metrics2 = self._processResults(results1, results2, correct1, correct2, labels)
 
             # # Hand off to ReportPage on main thread
             self.after(0, lambda: self._show_report(metrics1, metrics2))

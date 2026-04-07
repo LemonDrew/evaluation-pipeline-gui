@@ -118,8 +118,6 @@ class ModelRunner:
             return self._predict_pytorch(image)
  
     def _predict_tflite(self, image: Image.Image) -> dict:
-        import tensorflow as tf
-
         dtype = self._input_details[0]["dtype"]
         arr   = np.array(image, dtype=np.float32)
 
@@ -137,17 +135,42 @@ class ModelRunner:
 
         output = self._model.get_tensor(self._output_details[0]["index"])
 
-        out = output[0].T          # (2100, 11)
-        class_scores = out[:, 4:]  # (2100, 7)
-        confidences = np.max(class_scores, axis=1)
-        class_ids = np.argmax(class_scores, axis=1)
+        out          = output[0].T
+        boxes_xywh   = out[:, :4]
+        class_scores = out[:, 4:]
+        confidences  = np.max(class_scores, axis=1)
+        class_ids    = np.argmax(class_scores, axis=1)
 
-        best_idx = np.argmax(confidences)
+        best_idx   = np.argmax(confidences)
         best_class = int(class_ids[best_idx])
-        best_conf = float(confidences[best_idx])
+        best_conf  = float(confidences[best_idx])
         best_label = LABELS[best_class] if best_class < len(LABELS) else str(best_class)
 
-        return {"label": best_label, "confidence": best_conf, "time_ms": (t1 - t0) * 1000}
+        cx, cy, w, h = boxes_xywh[best_idx].tolist()
+
+        # Get input size for normalization
+        input_h = self._input_details[0]["shape"][1]
+        input_w = self._input_details[0]["shape"][2]
+
+        # Check if already normalized (values <= 1.0) or in pixel coords
+        if cx > 1.0 or cy > 1.0:
+            # Normalize to 0-1
+            cx /= input_w
+            cy /= input_h
+            w  /= input_w
+            h  /= input_h
+
+        return {
+            "label":      best_label,
+            "confidence": best_conf,
+            "time_ms":    (t1 - t0) * 1000,
+            "box": {
+                "cx": cx,
+                "cy": cy,
+                "w":  w,
+                "h":  h,
+            },
+        }
     
     # ── Cleanup ───────────────────────────────────────────────────────────────
  

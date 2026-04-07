@@ -107,7 +107,7 @@ class ReportPage(customtkinter.CTkFrame):
         rows = []
  
         # Accuracy — higher is better
-        a1, a2 = m1["accuracy"], m2["accuracy"]
+        a1, a2 = m1["recall"], m2["recall"]
         rows.append((
             "Top-1 Accuracy",
             f"{a1 * 100:.2f}%",
