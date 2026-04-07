@@ -23,7 +23,6 @@ class EvaluationPage(customtkinter.CTkFrame):
 
     _STEPS = [
         "Loading models…",
-        "Resolving minimum resolution…",
         "Loading dataset…",
         "Running evaluation…",
         "Generating report…",
@@ -51,7 +50,7 @@ class EvaluationPage(customtkinter.CTkFrame):
         )
         self._sub_lbl.grid(row=2, column=0, padx=20, pady=(0, 20))
 
-    def run_evaluation(self, model1: dict, model2: dict, dataset_folder: str, is_live: bool):
+    def run_evaluation(self, model1: dict, model2: dict, dataset_folder: str, label : str, is_live: bool):
         """
         Start the evaluation pipeline in a background thread.
 
@@ -63,6 +62,7 @@ class EvaluationPage(customtkinter.CTkFrame):
         self._model1_info    = model1
         self._model2_info    = model2
         self._dataset_folder = dataset_folder
+        self._expected_label = label
 
         print(f"Model 1: {model1}")
         print(f"Model 2: {model2}")
@@ -72,8 +72,7 @@ class EvaluationPage(customtkinter.CTkFrame):
         if (not is_live):   
             t = threading.Thread(target=self._pipeline, daemon=True)
             t.start()
-        else:
-            return
+   
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -82,13 +81,20 @@ class EvaluationPage(customtkinter.CTkFrame):
         self.after(0, lambda: self._progress.set(progress))
         self.after(0, lambda: self._sub_var.set(sub))
 
-    def _load_dataset(self) -> list[tuple[str, int]]:
+    # Helper Function to load models
+    def _loadModels(self):
+        self._set_status(self._STEPS[0], 0.05)
+        runner1 = ModelRunner(self._model1_info["path"], self._model1_info.get("arch"))
+        runner2 = ModelRunner(self._model2_info["path"], self._model2_info.get("arch"))
+        runner1.load()
+        runner2.load()
+        return runner1, runner2
 
+    # Helper Function to load images from folder
+    def _loadImages(self):
+        self._set_status(self._STEPS[1], 0.25)
         # Directory where images are stored
         images_dir = os.path.join(self._dataset_folder, "images")
-
-        # Hardcoded the expected label for now
-        label = "no pill under tongue"
 
         # Retrieve the list of image files
         image_files = os.listdir(images_dir)
@@ -97,105 +103,93 @@ class EvaluationPage(customtkinter.CTkFrame):
 
         for img_file in image_files:
             img_path = os.path.join(images_dir, img_file)
-            dataset.append((img_path, "pill"))
+            dataset.append((img_path, self._expected_label))
 
         return dataset
+    
+    def _runInference(self, runner1, runner2, dataset):
 
-    @staticmethod
-    def retrieve_minimum_resolution(runner1: ModelRunner, runner2: ModelRunner) -> tuple[int, int]:
-        """Return the smallest (H, W) accepted by both models."""
-        h1, w1 = runner1.input_size()
-        h2, w2 = runner2.input_size()
-        return min(h1, h2), min(w1, w2)
+        self._set_status(self._STEPS[2], 0.35)
+
+        # Retrieve size of each model
+        h1, w1 = runner1.input_size() 
+        h2, w2 = runner2.input_size()  
+
+        results1, results2 = [], []
+        correct1 = correct2 = 0
+
+        for i, (img_path, true_label) in enumerate(dataset):
+
+            image1 = Image.open(img_path).convert("RGB").resize((w1, h1))
+            image2 = Image.open(img_path).convert("RGB").resize((w2, h2))
+
+            r1 = runner1.predict(image1)
+            r2 = runner2.predict(image2)
+
+            results1.append(r1)
+            results2.append(r2)
+
+            if r1["label"] == true_label:
+                correct1 += 1
+            if r2["label"] == true_label:
+                correct2 += 1
+
+            progress = 0.35 + 0.55 * ((i + 1) / n)
+            self._set_status(
+                self._STEPS[3],
+                progress,
+                f"Image {i + 1} / {n}",
+            )
+
+        runner1.close()
+        runner2.close()
+
+        return results1, results2, correct1, correct2
+    
+    def _processResults(self, results1, results2, correct1, correct2):
+
+        self._set_status(self._STEPS[3], 0.95)
+        
+        def summarise(results: list[dict], correct: int) -> dict:
+            times   = [r["time_ms"] for r in results]
+            mean_ms = sum(times) / len(times)
+            total_s = sum(times) / 1000
+            return {
+                "accuracy":         correct / n,
+                "mean_time_ms":     mean_ms,
+                "throughput_img_s": n / total_s,
+                "per_image":        results,
+            }
+        
+        metrics1 = summarise(results1, correct1)
+        metrics2 = summarise(results2, correct2)
+
+        print("Metrics for Model 1:")
+        for k, v in metrics1.items():
+            if k != "per_image":
+                print(f"  {k}: {v}")
+        print("Metrics for Model 2:")
+        for k, v in metrics2.items():
+            if k != "per_image":
+                print(f"  {k}: {v}")
+
+        return metrics1, metrics2
 
     # Main Evaluation Pipeline to be run 
     def _pipeline(self):
         try:
-            # Step 1 — load models
-            self._set_status(self._STEPS[0], 0.05)
-            runner1 = ModelRunner(self._model1_info["path"], self._model1_info.get("arch"))
-            runner2 = ModelRunner(self._model2_info["path"], self._model2_info.get("arch"))
-            runner1.load()
-            runner2.load()
+            
+            # Load Models
+            runner1, runner2 = self._loadModels()
 
-            print("------------ Step 1 complete ------------")
-            print("Models loaded successfully.")
+            # Load Images
+            dataset = self._loadImages()
 
-            # Step 2 — minimum resolution
-            self._set_status(self._STEPS[1], 0.15)
-            h, w = self.retrieve_minimum_resolution(runner1, runner2)
+            # Run Inference
+            results1, results2, correct1, correct2 = self._runInference(runner1, runner2, dataset)
 
-            print
-            print(f"Minimum shared resolution: {w}x{h}")
-
-            # # Step 3 — load dataset
-            self._set_status(self._STEPS[2], 0.25)
-            dataset = self._load_dataset()
-            n = len(dataset)
-
-            print("------------ Step 3 complete ------------")
-            print(f"Loaded {n} images from dataset.")
-
-            # # Step 4 — run inference
-            self._set_status(self._STEPS[3], 0.35)
-
-            results1, results2 = [], []
-            correct1 = correct2 = 0
-
-            for i, (img_path, true_label) in enumerate(dataset):
-                image = Image.open(img_path).convert("RGB").resize((w, h))
-
-                r1 = runner1.predict(image)
-                r2 = runner2.predict(image)
-
-                results1.append(r1)
-                results2.append(r2)
-
-                if r1["label"] == true_label:
-                    correct1 += 1
-                if r2["label"] == true_label:
-                    correct2 += 1
-
-                progress = 0.35 + 0.55 * ((i + 1) / n)
-                self._set_status(
-                    self._STEPS[3],
-                    progress,
-                    f"Image {i + 1} / {n}",
-                )
-
-            runner1.close()
-            runner2.close()
-
-            print("------------ Step 4 complete ------------")
-            print(f"Model 1: {correct1} / {n} correct")
-            print(f"Model 2: {correct2} / {n} correct")
-
-            # Step 5 — compute metrics
-            self._set_status(self._STEPS[4], 0.95)
-
-            def summarise(results: list[dict], correct: int) -> dict:
-                times   = [r["time_ms"] for r in results]
-                mean_ms = sum(times) / len(times)
-                total_s = sum(times) / 1000
-                return {
-                    "accuracy":         correct / n,
-                    "mean_time_ms":     mean_ms,
-                    "throughput_img_s": n / total_s,
-                    "per_image":        results,
-                }
-
-            metrics1 = summarise(results1, correct1)
-            metrics2 = summarise(results2, correct2)
-
-            print("------------ Step 5 complete ------------")
-            print("Metrics for Model 1:")
-            for k, v in metrics1.items():
-                if k != "per_image":
-                    print(f"  {k}: {v}")
-            print("Metrics for Model 2:")
-            for k, v in metrics2.items():
-                if k != "per_image":
-                    print(f"  {k}: {v}")
+            # Process Results
+            metrics1, metrics2 = self._processResults(results1, results2, correct1, correct2)
 
             # # Hand off to ReportPage on main thread
             self.after(0, lambda: self._show_report(metrics1, metrics2))

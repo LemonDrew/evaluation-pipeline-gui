@@ -13,6 +13,7 @@ def build_main_ui(root: customtkinter.CTk):
 
     # Variable to store the dataset
     dataset_var = tk.StringVar(value="") 
+    label_var = tk.StringVar(value="")
     is_live_camera = tk.BooleanVar(value=False)
 
     # Frame to contain the dataset button
@@ -45,6 +46,12 @@ def build_main_ui(root: customtkinter.CTk):
         top_frame, text="Select Dataset", width=180, command=select_dataset
     )
     dataset_btn.grid(row=0, column=1, pady=(10, 0))
+
+    label_btn = customtkinter.CTkEntry(
+        top_frame, placeholder_text="Enter expected label", textvariable=label_var
+    )
+    label_btn.grid(row=2, column=1, pady=(10, 0))
+
     # Button's label
     dataset_lbl = customtkinter.CTkLabel(
         top_frame, textvariable=dataset_var, text_color="gray"
@@ -80,7 +87,8 @@ def build_main_ui(root: customtkinter.CTk):
             missing.append("Model 2")
         if not dataset and not is_live_camera.get():
             missing.append("Dataset folder")
-
+        if not label_var.get():
+            missing.append("Expected label")
         if missing:
             error_var.set(f"Please select: {', '.join(missing)}")
             return
@@ -93,7 +101,7 @@ def build_main_ui(root: customtkinter.CTk):
 
         eval_page = EvaluationPage(root)
         eval_page.pack(fill="both", expand=True)
-        eval_page.run_evaluation(model1, model2, dataset, is_live_camera.get())
+        eval_page.run_evaluation(model1, model2, dataset, label_var.get(), is_live_camera.get())
 
     def set_camera_preview():
         status = not is_live_camera.get()
@@ -104,7 +112,7 @@ def build_main_ui(root: customtkinter.CTk):
         root, text="Enable Live Camera Preview", command=set_camera_preview
     )
     live_camera_btn.grid(row=3, column=0, pady=(5, 5))
-
+        
     start_btn = customtkinter.CTkButton(
         root, text="Start Evaluation", command=start_evaluation
     )
